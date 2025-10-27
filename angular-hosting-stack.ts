@@ -1,13 +1,29 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { Bucket, BucketAccessControl } from 'aws-cdk-lib/aws-s3';
-import { CloudFrontWebDistribution, OriginAccessIdentity } from 'aws-cdk-lib/aws-cloudfront';
+import { Bucket } from 'aws-cdk-lib/aws-s3';
+import { 
+  CloudFrontWebDistribution, 
+  OriginAccessIdentity,
+  ViewerCertificate,
+  SecurityPolicyProtocol,
+  SSLMethod
+} from 'aws-cdk-lib/aws-cloudfront';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
-import * as path from 'path';
+import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
+import { ARecord, RecordTarget, HostedZone } from 'aws-cdk-lib/aws-route53';
+import { CloudFrontTarget } from 'aws-cdk-lib/aws-route53-targets';
+import { EnvironmentConfig } from './config/environment';
+
+export interface AngularHostingStackProps extends cdk.StackProps {
+  readonly environment: EnvironmentConfig;
+  readonly angularBuildPath: string;
+}
 
 export class AngularHostingStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: AngularHostingStackProps) {
     super(scope, id, props);
+
+    const { environment, angularBuildPath } = props;
 
     // S3 bucket for static site
     const siteBucket = new Bucket(this, 'SiteBucket', {
@@ -22,8 +38,8 @@ export class AngularHostingStack extends cdk.Stack {
     const oai = new OriginAccessIdentity(this, 'OAI');
     siteBucket.grantRead(oai);
 
-    // CloudFront distribution
-    const distribution = new CloudFrontWebDistribution(this, 'SiteDistribution', {
+    // CloudFront distribution configuration
+    const distributionConfig: any = {
       originConfigs: [
         {
           s3OriginSource: {
@@ -34,21 +50,70 @@ export class AngularHostingStack extends cdk.Stack {
         },
       ],
       defaultRootObject: 'index.html',
-    });
+      errorConfigurations: [
+        {
+          errorCode: 404,
+          responseCode: 200,
+          responsePagePath: '/index.html',
+        },
+      ],
+    };
+
+    // Add custom domain configuration for production
+    if (environment.domainName && environment.certificateArn) {
+      const certificate = Certificate.fromCertificateArn(
+        this,
+        'Certificate',
+        environment.certificateArn
+      );
+
+      distributionConfig.viewerCertificate = ViewerCertificate.fromAcmCertificate(certificate, {
+        aliases: [environment.domainName],
+        securityPolicy: SecurityPolicyProtocol.TLS_V1_2_2021,
+        sslMethod: SSLMethod.SNI,
+      });
+
+    }
+
+    // Create CloudFront distribution
+    const distribution = new CloudFrontWebDistribution(
+      this,
+      'SiteDistribution',
+      distributionConfig
+    );
+
+    // Create Route 53 record for production
+    if (environment.domainName && environment.certificateArn) {
+      const zone = HostedZone.fromLookup(this, 'Zone', {
+        domainName: environment.domainName,
+      });
+
+      new ARecord(this, 'SiteAliasRecord', {
+        recordName: environment.domainName,
+        target: RecordTarget.fromAlias(new CloudFrontTarget(distribution)),
+        zone,
+      });
+    }
 
     // Deploy Angular build to S3
     new BucketDeployment(this, 'DeployWebsite', {
-      sources: [Source.asset(path.join(__dirname, '../dist'))], // Change path if needed
+      sources: [Source.asset(angularBuildPath)],
       destinationBucket: siteBucket,
       distribution,
       distributionPaths: ['/*'],
     });
 
+    // Stack outputs
     new cdk.CfnOutput(this, 'BucketName', {
       value: siteBucket.bucketName,
     });
     new cdk.CfnOutput(this, 'CloudFrontURL', {
       value: distribution.distributionDomainName,
     });
+    if (environment.domainName) {
+      new cdk.CfnOutput(this, 'DomainName', {
+        value: environment.domainName,
+      });
+    }
   }
 }

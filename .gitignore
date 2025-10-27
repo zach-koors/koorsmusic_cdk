@@ -37,3 +37,4 @@ coverage/
 # Compiled binary addons
 dist/
 build/
+AWSCLIV2.pkg

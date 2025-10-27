@@ -8,7 +8,11 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "deploy:dev": "cdk deploy --context env=dev",
+    "deploy:prod": "cdk deploy --context env=prod",
+    "diff:dev": "cdk diff --context env=dev",
+    "diff:prod": "cdk diff --context env=prod"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.221.0",
