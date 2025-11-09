@@ -10,8 +10,6 @@ import {
 } from 'aws-cdk-lib/aws-cloudfront';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
-import { ARecord, RecordTarget, HostedZone } from 'aws-cdk-lib/aws-route53';
-import { CloudFrontTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { EnvironmentConfig } from './config/environment';
 
 export interface AngularHostingStackProps extends cdk.StackProps {
@@ -60,7 +58,7 @@ export class AngularHostingStack extends cdk.Stack {
     };
 
     // Add custom domain configuration for production
-    if (environment.domainName && environment.certificateArn) {
+    if (environment.domainNames && environment.certificateArn) {
       const certificate = Certificate.fromCertificateArn(
         this,
         'Certificate',
@@ -68,7 +66,7 @@ export class AngularHostingStack extends cdk.Stack {
       );
 
       distributionConfig.viewerCertificate = ViewerCertificate.fromAcmCertificate(certificate, {
-        aliases: [environment.domainName],
+        aliases: environment.domainNames,
         securityPolicy: SecurityPolicyProtocol.TLS_V1_2_2021,
         sslMethod: SSLMethod.SNI,
       });
@@ -81,19 +79,6 @@ export class AngularHostingStack extends cdk.Stack {
       'SiteDistribution',
       distributionConfig
     );
-
-    // Create Route 53 record for production
-    if (environment.domainName && environment.certificateArn) {
-      const zone = HostedZone.fromLookup(this, 'Zone', {
-        domainName: environment.domainName,
-      });
-
-      new ARecord(this, 'SiteAliasRecord', {
-        recordName: environment.domainName,
-        target: RecordTarget.fromAlias(new CloudFrontTarget(distribution)),
-        zone,
-      });
-    }
 
     // Deploy Angular build to S3
     new BucketDeployment(this, 'DeployWebsite', {
@@ -110,9 +95,9 @@ export class AngularHostingStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CloudFrontURL', {
       value: distribution.distributionDomainName,
     });
-    if (environment.domainName) {
+    if (environment.domainNames) {
       new cdk.CfnOutput(this, 'DomainName', {
-        value: environment.domainName,
+        value: environment.domainNames[0],
       });
     }
   }

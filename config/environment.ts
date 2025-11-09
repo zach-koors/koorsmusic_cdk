@@ -1,6 +1,6 @@
 export interface EnvironmentConfig {
   readonly stackNamePrefix: string;
-  readonly domainName?: string;
+  readonly domainNames?: string[];
   readonly certificateArn?: string;
 }
 
@@ -10,8 +10,7 @@ export const environments: Record<string, EnvironmentConfig> = {
   },
   prod: {
     stackNamePrefix: 'KoorsMusicProd',
-    // TODO: Replace these with your actual values
-    domainName: 'your-domain.com',
-    certificateArn: 'arn:aws:acm:us-east-1:YOUR_ACCOUNT:certificate/YOUR_CERT_ID',
+    domainNames: ['kokozami.net', 'www.kokozami.net'],
+    certificateArn: 'arn:aws:acm:us-east-1:211125448427:certificate/d4c9f3fa-9816-419e-a407-e2cebd638808',
   },
 };
