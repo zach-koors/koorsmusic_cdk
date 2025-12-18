@@ -1,2 +1,2 @@
 # koorsmusic_cdk
-AWS Infrastructure for koorsmusic.com
+AWS Infrastructure for kokozami.net
