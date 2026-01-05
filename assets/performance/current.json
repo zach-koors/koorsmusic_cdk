@@ -1,0 +1,11 @@
+{
+  "id": "current",
+  "status": "IDLE",
+  "version": 0,
+  "leaderId": null,
+  "createdAt": 0,
+  "updatedAt": 0,
+  "expiresAt": 0,
+  "startTime": null,
+  "participantCount": 0
+}

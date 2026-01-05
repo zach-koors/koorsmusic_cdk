@@ -8,7 +8,11 @@ import {
   SecurityPolicyProtocol,
   SSLMethod
 } from 'aws-cdk-lib/aws-cloudfront';
-import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
+import { BucketDeployment, Source, CacheControl } from 'aws-cdk-lib/aws-s3-deployment';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { EnvironmentConfig } from './config/environment';
 
@@ -87,6 +91,44 @@ export class AngularHostingStack extends cdk.Stack {
       distribution,
       distributionPaths: ['/*'],
     });
+
+    // Seed performance/current.json into the site bucket as an asset with no-store
+    new BucketDeployment(this, 'DeployPerformanceSeed', {
+      sources: [Source.asset('assets/performance')],
+      destinationBucket: siteBucket,
+      destinationKeyPrefix: 'performance',
+      cacheControl: [CacheControl.noStore()],
+    });
+
+    // Minimal Lambda + API Gateway for /performance (Phase 1)
+    const choirFn = new NodejsFunction(this, 'ChoirFn', {
+      entry: 'lambda/choir/index.ts',
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'handler',
+      environment: {
+        BUCKET: siteBucket.bucketName,
+        KEY: 'performance/current.json',
+      },
+    });
+
+    // Restrict IAM to the single object
+    choirFn.addToRolePolicy(new PolicyStatement({
+      actions: ['s3:GetObject', 's3:PutObject'],
+      resources: [siteBucket.arnForObjects('performance/current.json')],
+    }));
+
+    // API Gateway (very small surface for Phase 1)
+    const api = new apigateway.RestApi(this, 'ChoirApi', {
+      restApiName: 'Choir Service',
+      deployOptions: { stageName: process.env.CDK_STAGE || 'dev' },
+    });
+
+    const perf = api.root.addResource('performance');
+    perf.addMethod('GET', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
+    perf.addResource('claim').addMethod('POST', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
+    perf.addResource('join').addMethod('POST', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
+    perf.addResource('start').addMethod('POST', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
+    perf.addResource('reset').addMethod('POST', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
 
     // Stack outputs
     new cdk.CfnOutput(this, 'BucketName', {
