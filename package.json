@@ -15,6 +15,7 @@
     "diff:prod": "cdk diff --context env=prod"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.962.0",
     "aws-cdk-lib": "^2.221.0",
     "aws-sdk": "^2.1693.0",
     "cdk": "^2.1031.0",

@@ -90,6 +90,9 @@ export class AngularHostingStack extends cdk.Stack {
       destinationBucket: siteBucket,
       distribution,
       distributionPaths: ['/*'],
+      // Increase memory and ephemeral storage for the deployment Lambda to speed up large uploads
+      memoryLimit: 1024, // MiB
+      ephemeralStorageSize: cdk.Size.gibibytes(1),
     });
 
     // Seed performance/current.json into the site bucket as an asset with no-store
@@ -98,6 +101,8 @@ export class AngularHostingStack extends cdk.Stack {
       destinationBucket: siteBucket,
       destinationKeyPrefix: 'performance',
       cacheControl: [CacheControl.noStore()],
+      memoryLimit: 1024,
+      ephemeralStorageSize: cdk.Size.gibibytes(1),
     });
 
     // Minimal Lambda + API Gateway for /performance (Phase 1)
@@ -109,12 +114,23 @@ export class AngularHostingStack extends cdk.Stack {
         BUCKET: siteBucket.bucketName,
         KEY: 'performance/current.json',
       },
+      // Keep this Lambda lightweight; deployment lambdas will get increased resources instead.
     });
 
     // Restrict IAM to the single object
     choirFn.addToRolePolicy(new PolicyStatement({
-      actions: ['s3:GetObject', 's3:PutObject'],
-      resources: [siteBucket.arnForObjects('performance/current.json')],
+      actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+      resources: [siteBucket.arnForObjects('performance/*')],
+    }));
+
+    // Allow listing the bucket (restricted to performance/ prefix) so the Lambda can
+    // perform bucket-level operations that require ListBucket.
+    choirFn.addToRolePolicy(new PolicyStatement({
+      actions: ['s3:ListBucket'],
+      resources: [siteBucket.bucketArn],
+      conditions: {
+        StringLike: { 's3:prefix': 'performance/*' },
+      },
     }));
 
     // API Gateway (very small surface for Phase 1)
@@ -125,10 +141,27 @@ export class AngularHostingStack extends cdk.Stack {
 
     const perf = api.root.addResource('performance');
     perf.addMethod('GET', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
-    perf.addResource('claim').addMethod('POST', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
-    perf.addResource('join').addMethod('POST', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
-    perf.addResource('start').addMethod('POST', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
-    perf.addResource('reset').addMethod('POST', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
+    const corsOptions = {
+      allowOrigins: ['*'],
+      allowMethods: ['POST', 'OPTIONS'],
+      allowHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      exposeHeaders: ['Cache-Control', 'Content-Type'],
+      maxAge: cdk.Duration.seconds(3600),
+    } as const;
+
+    const subresources = ['claim', 'join', 'start', 'reset'];
+    for (const name of subresources) {
+      const r = perf.addResource(name);
+      r.addCorsPreflight(corsOptions as any);
+      r.addMethod('POST', new apigateway.LambdaIntegration(choirFn, { proxy: true }));
+    }
+    perf.addCorsPreflight({
+      allowOrigins: ['*'],
+      allowMethods: ['GET', 'POST', 'OPTIONS'],
+      allowHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      exposeHeaders: ['Cache-Control', 'Content-Type'],
+      maxAge: cdk.Duration.seconds(3600),
+    });
 
     // Stack outputs
     new cdk.CfnOutput(this, 'BucketName', {
