@@ -49,6 +49,17 @@ describe('choir handler', () => {
     expect(body.status).toBe('IDLE');
   });
 
+  test('GET returns IDLE when object missing', async () => {
+    s3Mock.send.mockImplementationOnce((cmd: any) => Promise.reject({ Code: 'NoSuchKey', message: 'The specified key does not exist.' }));
+
+    const evt = { httpMethod: 'GET' };
+    const res = await handler(evt);
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.status).toBe('IDLE');
+  });
+
   test('POST /performance/claim sets READY when IDLE', async () => {
     const sample = { id: 'current', status: 'IDLE', version: 0, expiresAt: 0 };
       s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({ Body: Buffer.from(JSON.stringify(sample)), ETag: '"etag"' }));

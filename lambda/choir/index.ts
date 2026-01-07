@@ -43,7 +43,8 @@ export async function readPerformance(bucket: string, key: string) {
     const obj = JSON.parse(bodyStr);
     return { obj: obj as Performance, eTag: data.ETag };
   } catch (err: any) {
-    if (err.code === 'NoSuchKey' || err.code === 'NotFound') {
+    const code = err && (err.code || err.Code || err.name || (err.$metadata && err.$metadata.httpStatusCode && String(err.$metadata.httpStatusCode)));
+    if (code === 'NoSuchKey' || code === 'NotFound' || code === '404' || (err && /no such key/i.test(String(err.message || '')))) {
       return { obj: createIdle(), eTag: undefined };
     }
     throw err;
