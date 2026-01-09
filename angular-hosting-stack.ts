@@ -115,9 +115,9 @@ exports.handler = handler;`;
       destinationBucket: siteBucket,
       destinationKeyPrefix: 'assets',
       cacheControl: [CacheControl.fromString('no-cache, max-age=0, must-revalidate')],
-  memoryLimit: 512,
+      memoryLimit: 512,
       distribution,
-      distributionPaths: ['/assets/config.json'],
+      distributionPaths: ['/assets/config*.json'],
     });
 
     // Seed performance/current.json into the site bucket as an asset with no-store
