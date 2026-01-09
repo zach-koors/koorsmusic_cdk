@@ -48,14 +48,15 @@ export class AngularHostingStack extends cdk.Stack {
 
     // Create CloudFront Function to rewrite config.json based on hostnames
     const prodHosts = environment.domainNames ?? [];
-    const hostChecks = prodHosts.map(h => `host === '${h}'`).join(' || ');
+    const prodHostsJson = JSON.stringify(prodHosts);
     const fnCode = `function handler(event) {
   var request = event.request;
   var headers = request.headers || {};
   var host = headers['host'] && headers['host'].value ? headers['host'].value : '';
+  var prodHosts = ${prodHostsJson};
 
   if (request.uri === '/assets/config.json') {
-    var isProdHost = ${hostChecks || 'false'};
+    var isProdHost = prodHosts.indexOf(host) !== -1;
     if (isProdHost) {
       request.uri = '/assets/config.prod.json';
     }
