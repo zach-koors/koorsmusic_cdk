@@ -1,13 +1,9 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
-import { 
+import {
   Distribution,
-  CloudFrontWebDistribution, 
   OriginAccessIdentity,
-  ViewerCertificate,
-  SecurityPolicyProtocol,
-  SSLMethod,
   Function as CfFunction,
   FunctionCode,
   FunctionEventType,
@@ -84,8 +80,10 @@ exports.handler = handler;`;
         origin: new S3Origin(siteBucket, { originAccessIdentity: oai }),
         viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       },
+      // Narrow the behavior to only the config file so the CloudFront Function
+      // is invoked only when requests are for /assets/config.json.
       additionalBehaviors: {
-        'assets/*': {
+        'assets/config.json': {
           origin: new S3Origin(siteBucket, { originAccessIdentity: oai }),
           functionAssociations: [
             { function: configRewriteFn, eventType: FunctionEventType.VIEWER_REQUEST },
@@ -117,10 +115,9 @@ exports.handler = handler;`;
       destinationBucket: siteBucket,
       destinationKeyPrefix: 'assets',
       cacheControl: [CacheControl.fromString('no-cache, max-age=0, must-revalidate')],
-      memoryLimit: 512,
-      ephemeralStorageSize: cdk.Size.mebibytes(128),
+  memoryLimit: 512,
       distribution,
-      distributionPaths: ['/assets/*'],
+      distributionPaths: ['/assets/config.json'],
     });
 
     // Seed performance/current.json into the site bucket as an asset with no-store
