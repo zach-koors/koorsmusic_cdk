@@ -59,9 +59,7 @@ export class AngularHostingStack extends cdk.Stack {
   }
 
   return request;
-}
-
-exports.handler = handler;`;
+}`;
 
     const configRewriteFn = new CfFunction(this, 'ConfigRewriteFn', {
       code: FunctionCode.fromInline(fnCode),
