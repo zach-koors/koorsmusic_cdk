@@ -37,7 +37,6 @@ Operational Rules
 - Small, focused PRs with meaningful titles and a changelog entry when appropriate.
 - Document how to validate changes (commands, env vars, endpoints, sample requests).
 - Log and surface telemetry: add structured logs for errors and important state transitions.
- - Commit message style: do not use the "feat:" prefix in commit messages; use concise, imperative messages that clearly describe the change (e.g., "Serve env-specific config via CloudFront Function").
 
 Escalation & Hard Blockers
 - If lacking permissions, credentials, or a clear requirement, escalate as a Critical Gap with evidence and suggested actions.

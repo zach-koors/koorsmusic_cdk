@@ -1,15 +1,13 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
-import {
-  Distribution,
+import { 
+  CloudFrontWebDistribution, 
   OriginAccessIdentity,
-  Function as CfFunction,
-  FunctionCode,
-  FunctionEventType,
-  ViewerProtocolPolicy,
+  ViewerCertificate,
+  SecurityPolicyProtocol,
+  SSLMethod
 } from 'aws-cdk-lib/aws-cloudfront';
-import { S3Origin } from 'aws-cdk-lib/aws-cloudfront-origins';
 import { BucketDeployment, Source, CacheControl } from 'aws-cdk-lib/aws-s3-deployment';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -42,61 +40,49 @@ export class AngularHostingStack extends cdk.Stack {
     const oai = new OriginAccessIdentity(this, 'OAI');
     siteBucket.grantRead(oai);
 
-    // Create CloudFront Function to rewrite config.json based on hostnames
-    const prodHosts = environment.domainNames ?? [];
-    const prodHostsJson = JSON.stringify(prodHosts);
-    const fnCode = `function handler(event) {
-  var request = event.request;
-  var headers = request.headers || {};
-  var host = headers['host'] && headers['host'].value ? headers['host'].value : '';
-  var prodHosts = ${prodHostsJson};
-
-  if (request.uri === '/assets/config.json') {
-    var isProdHost = prodHosts.indexOf(host) !== -1;
-    if (isProdHost) {
-      request.uri = '/assets/config.prod.json';
-    }
-  }
-
-  return request;
-}
-
-exports.handler = handler;`;
-
-    const configRewriteFn = new CfFunction(this, 'ConfigRewriteFn', {
-      code: FunctionCode.fromInline(fnCode),
-      comment: 'Rewrite /assets/config.json to /assets/config.prod.json for prod hosts',
-    });
-
-    // Optionally import certificate and domain names for production
-    const certificate = environment.domainNames && environment.certificateArn
-      ? Certificate.fromCertificateArn(this, 'Certificate', environment.certificateArn)
-      : undefined;
-    const domainNames = environment.domainNames;
-
-    // CloudFront Distribution (modern API)
-    const distribution = new Distribution(this, 'SiteDistribution', {
-      defaultBehavior: {
-        origin: new S3Origin(siteBucket, { originAccessIdentity: oai }),
-        viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-      },
-      // Narrow the behavior to only the config file so the CloudFront Function
-      // is invoked only when requests are for /assets/config.json.
-      additionalBehaviors: {
-        'assets/config.json': {
-          origin: new S3Origin(siteBucket, { originAccessIdentity: oai }),
-          functionAssociations: [
-            { function: configRewriteFn, eventType: FunctionEventType.VIEWER_REQUEST },
-          ],
+    // CloudFront distribution configuration
+    const distributionConfig: any = {
+      originConfigs: [
+        {
+          s3OriginSource: {
+            s3BucketSource: siteBucket,
+            originAccessIdentity: oai,
+          },
+          behaviors: [{ isDefaultBehavior: true }],
         },
-      },
-      defaultRootObject: 'index.html',
-      errorResponses: [
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html' },
       ],
-      certificate,
-      domainNames,
-    });
+      defaultRootObject: 'index.html',
+      errorConfigurations: [
+        {
+          errorCode: 404,
+          responseCode: 200,
+          responsePagePath: '/index.html',
+        },
+      ],
+    };
+
+    // Add custom domain configuration for production
+    if (environment.domainNames && environment.certificateArn) {
+      const certificate = Certificate.fromCertificateArn(
+        this,
+        'Certificate',
+        environment.certificateArn
+      );
+
+      distributionConfig.viewerCertificate = ViewerCertificate.fromAcmCertificate(certificate, {
+        aliases: environment.domainNames,
+        securityPolicy: SecurityPolicyProtocol.TLS_V1_2_2021,
+        sslMethod: SSLMethod.SNI,
+      });
+
+    }
+
+    // Create CloudFront distribution
+    const distribution = new CloudFrontWebDistribution(
+      this,
+      'SiteDistribution',
+      distributionConfig
+    );
 
     // Deploy Angular build to S3
     new BucketDeployment(this, 'DeployWebsite', {
@@ -107,17 +93,6 @@ exports.handler = handler;`;
       // Increase memory and ephemeral storage for the deployment Lambda to speed up large uploads
       memoryLimit: 1024, // MiB
       ephemeralStorageSize: cdk.Size.gibibytes(1),
-    });
-
-    // Deploy environment config files (dev + prod) to /assets with short/no-cache
-    new BucketDeployment(this, 'DeployConfigFiles', {
-      sources: [Source.asset('assets/configs')],
-      destinationBucket: siteBucket,
-      destinationKeyPrefix: 'assets',
-      cacheControl: [CacheControl.fromString('no-cache, max-age=0, must-revalidate')],
-      memoryLimit: 512,
-      distribution,
-      distributionPaths: ['/assets/config*.json'],
     });
 
     // Seed performance/current.json into the site bucket as an asset with no-store
