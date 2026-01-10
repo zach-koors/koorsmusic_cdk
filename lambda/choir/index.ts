@@ -15,6 +15,8 @@ export interface Performance {
   expiresAt: number;
   startTime?: number | null;
   participantCount: number;
+  nextVoiceIndex?: number;
+  lastAssignedVoice?: string | null;
 }
 
 const createIdle = (now = Date.now()): Performance => ({
@@ -27,6 +29,8 @@ const createIdle = (now = Date.now()): Performance => ({
   expiresAt: 0,
   startTime: null,
   participantCount: 0,
+  nextVoiceIndex: 0,
+  lastAssignedVoice: null,
 });
 
 export async function readPerformance(bucket: string, key: string) {
@@ -141,7 +145,7 @@ export const handler = async (event: any) => {
       if (path.endsWith('/claim')) {
         const now = Date.now();
         const current = (await readPerformance(bucket, key)).obj;
-        const candidate = { id: 'current', status: 'READY', leaderId: randomId(), participantCount: 0, expiresAt: now + 60 * 60 * 1000, version: (current.version || 0) + 1, createdAt: current.createdAt || now, updatedAt: now } as Performance;
+        const candidate = { id: 'current', status: 'READY', leaderId: randomId(), participantCount: 0, expiresAt: now + 60 * 60 * 1000, version: (current.version || 0) + 1, createdAt: current.createdAt || now, updatedAt: now, nextVoiceIndex: 0, lastAssignedVoice: null } as Performance;
         try {
           await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: JSON.stringify(candidate), ContentType: 'application/json', CacheControl: 'no-store' }));
           const after = await readPerformance(bucket, key);
@@ -156,13 +160,19 @@ export const handler = async (event: any) => {
       }
 
       if (path.endsWith('/join')) {
+  const parts = ['S', 'A', 'B', 'T'];
         const res = await writePerformance(bucket, key, (cur) => {
-          if (cur.status === 'READY') return { ...cur, participantCount: (cur.participantCount || 0) + 1 } as Performance;
+          if (cur.status === 'READY') {
+            const idx = typeof cur.nextVoiceIndex === 'number' ? cur.nextVoiceIndex : 0;
+            const voice = parts[idx % parts.length];
+            return { ...cur, participantCount: (cur.participantCount || 0) + 1, nextVoiceIndex: (idx + 1) % parts.length, lastAssignedVoice: voice } as Performance;
+          }
           return cur;
         });
 
-  if (!res.success) return { statusCode: 409, headers: corsHeaders, body: JSON.stringify(res.performance) };
-  return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(res.performance) };
+        if (!res.success) return { statusCode: 409, headers: corsHeaders, body: JSON.stringify(res.performance) };
+        const bodyObj = { ...res.performance, voicePart: res.performance.lastAssignedVoice || null };
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(bodyObj) };
       }
 
       function parseBody(evBody: any) {

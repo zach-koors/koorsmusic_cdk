@@ -81,8 +81,8 @@ describe('choir handler', () => {
   test('POST /performance/join increments participantCount when READY', async () => {
     const sample = { id: 'current', status: 'READY', version: 1, participantCount: 0 };
   s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({ Body: Buffer.from(JSON.stringify(sample)), ETag: '"etag"' }));
-  s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({})); // put key
-  s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({ Body: Buffer.from(JSON.stringify({ ...sample, participantCount: 1, version: 2 })), ETag: '"etag2"' }));
+  s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({}));
+  s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({ Body: Buffer.from(JSON.stringify({ ...sample, participantCount: 1, version: 2, lastAssignedVoice: 'S', nextVoiceIndex: 1 })), ETag: '"etag2"' }));
 
     const evt = { httpMethod: 'POST', path: '/performance/join' };
     const res = await handler(evt);
@@ -90,6 +90,22 @@ describe('choir handler', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.participantCount).toBe(1);
+    expect(body.voicePart).toBe('S');
+  });
+
+  test('POST /performance/join assigns next voice (cycles)', async () => {
+    const sample = { id: 'current', status: 'READY', version: 2, participantCount: 1, nextVoiceIndex: 1 };
+    s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({ Body: Buffer.from(JSON.stringify(sample)), ETag: '"etag"' }));
+    s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({}));
+    s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({ Body: Buffer.from(JSON.stringify({ ...sample, participantCount: 2, version: 3, lastAssignedVoice: 'A', nextVoiceIndex: 2 })), ETag: '"etag2"' }));
+
+    const evt = { httpMethod: 'POST', path: '/performance/join' };
+    const res = await handler(evt);
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.participantCount).toBe(2);
+    expect(body.voicePart).toBe('A');
   });
 
   test('POST /performance/start validates leaderId', async () => {
@@ -110,7 +126,7 @@ describe('choir handler', () => {
     const sample = { id: 'current', status: 'PLAYING', version: 2, expiresAt: Date.now() - 1000 };
   s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({ Body: Buffer.from(JSON.stringify(sample)), ETag: '"etag"' }));
   s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({})); // put key
-  s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({ Body: Buffer.from(JSON.stringify({ id: 'current', status: 'IDLE', version: 3 })), ETag: '"etag2"' }));
+  s3Mock.send.mockImplementationOnce((cmd: any) => Promise.resolve({ Body: Buffer.from(JSON.stringify({ id: 'current', status: 'IDLE', version: 3, nextVoiceIndex: 0, lastAssignedVoice: null })), ETag: '"etag2"' }));
 
     const evt = { httpMethod: 'POST', path: '/performance/reset', body: JSON.stringify({}) };
     const res = await handler(evt);
@@ -118,5 +134,6 @@ describe('choir handler', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.status).toBe('IDLE');
+    expect(body.nextVoiceIndex).toBe(0);
   });
 });
